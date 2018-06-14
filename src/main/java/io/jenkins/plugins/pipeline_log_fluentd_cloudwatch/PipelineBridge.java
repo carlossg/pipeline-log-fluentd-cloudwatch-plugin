@@ -43,12 +43,12 @@ public class PipelineBridge extends PipelineLogFile {
 
     @Override
     protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
-        return new FluentdLogger(b.getParent().getFullName(), b.getNumber());
+        return new FluentdLogger(b.getParent().getFullName(), b.getId());
     }
 
     @Override
     protected InputStream logFor(WorkflowRun b, long start) throws IOException {
-        throw new UnsupportedOperationException("TODO pull lazily if possible from CloudWatch");
+        return new CloudWatchRetriever(b.getParent().getFullName(), b.getId()).open(start);
     }
 
 }

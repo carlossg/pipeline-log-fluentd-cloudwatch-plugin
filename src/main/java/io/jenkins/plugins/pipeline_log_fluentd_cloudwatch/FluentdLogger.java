@@ -48,9 +48,9 @@ final class FluentdLogger implements BuildListener {
     private final int port;
     private transient PrintStream logger;
 
-    FluentdLogger(String fullName, int number) throws IOException {
-        tag = fullName;
-        buildId = Integer.toString(number);
+    FluentdLogger(String tag, String buildId) throws IOException {
+        this.tag = tag;
+        this.buildId = buildId;
         host = System.getenv("FLUENTD_HOST");
         if (host == null) {
             throw new AbortException("You must specify the environment variable FLUENTD_HOST");
@@ -100,6 +100,7 @@ final class FluentdLogger implements BuildListener {
                 nodeId = line.substring(0, sep);
                 message = line.substring(sep + PipelineBridge.NODE_ID_SEP.length());
             }
+            // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
             Map<String, Object> data = new HashMap<>();
             data.put("buildId", buildId);
             if (nodeId != null) {
