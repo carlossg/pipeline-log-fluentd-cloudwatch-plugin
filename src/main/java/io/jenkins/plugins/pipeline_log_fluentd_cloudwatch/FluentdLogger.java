@@ -118,7 +118,7 @@ final class FluentdLogger implements BuildListener {
                 nodeId = null;
                 message = line;
             } else {
-                nodeId = line.substring(0, sep);
+                nodeId = line.substring(0, sep); // TODO sometimes this picks up junk from another line that got mixed in to this one; check that the nodeId is numeric
                 message = line.substring(sep + PipelineBridge.NODE_ID_SEP.length());
             }
             // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
