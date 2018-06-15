@@ -74,7 +74,7 @@ final class FluentdLogger implements BuildListener {
         private final FluentLogger logger;
 
         FluentdOutputStream() {
-            logger = FluentLogger.getLogger(tag, host, port);
+            logger = FluentLogger.getLogger(null, host, port);
         }
 
         @Override
