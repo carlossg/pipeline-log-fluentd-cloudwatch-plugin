@@ -24,7 +24,6 @@
 
 package io.jenkins.plugins.pipeline_log_fluentd_cloudwatch;
 
-import hudson.AbortException;
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BuildListener;
 import java.io.IOException;
@@ -48,13 +47,12 @@ final class FluentdLogger implements BuildListener {
     private final int port;
     private transient PrintStream logger;
 
-    FluentdLogger(String tag, String buildId) throws IOException {
+    FluentdLogger(String tag, String buildId) {
         this.tag = tag;
         this.buildId = buildId;
-        host = System.getenv("FLUENTD_HOST");
-        if (host == null) {
-            throw new AbortException("You must specify the environment variable FLUENTD_HOST");
-        }
+        // cf. FluentLoggerFactory.getLogger(String)
+        String _host = System.getenv("FLUENTD_HOST");
+        host = _host != null ? _host : "localhost";
         String portS = System.getenv("FLUENTD_PORT");
         port = portS == null ? 24224 : Integer.parseInt(portS);
     }
