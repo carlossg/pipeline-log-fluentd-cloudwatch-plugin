@@ -100,9 +100,9 @@ final class FluentdLogger implements BuildListener {
             }
             // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
             Map<String, Object> data = new HashMap<>();
-            data.put("buildId", buildId);
+            data.put("build", buildId);
             if (nodeId != null) {
-                data.put("nodeId", nodeId);
+                data.put("node", nodeId);
             }
             data.put("message", message);
             logger.log(tag, data);

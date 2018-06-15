@@ -71,13 +71,13 @@ class CloudWatchRetriever {
                     withNextToken(token).
                     withLogGroupName(logGroupName).
                     withLogStreamNames(logStreamName).
-                    withFilterPattern("{$.buildId = \"" + buildId + "\"}"));
+                    withFilterPattern("{$.build = \"" + buildId + "\"}"));
                 token = result.getNextToken();
                 for (FilteredLogEvent event : result.getEvents()) {
                     // TODO perhaps translate event.timestamp to a TimestampNote
                     JSONObject json = JSONObject.fromObject(event.getMessage());
-                    assert buildId.equals(json.optString("buildId"));
-                    String nodeId = json.optString("nodeId", null);
+                    assert buildId.equals(json.optString("build"));
+                    String nodeId = json.optString("node", null);
                     if (nodeId != null) {
                         w.write(nodeId);
                         w.write(PipelineBridge.NODE_ID_SEP);
