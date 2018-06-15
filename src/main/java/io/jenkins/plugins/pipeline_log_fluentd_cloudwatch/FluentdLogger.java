@@ -26,6 +26,7 @@ package io.jenkins.plugins.pipeline_log_fluentd_cloudwatch;
 
 import hudson.console.LineTransformationOutputStream;
 import hudson.model.BuildListener;
+import hudson.remoting.Channel;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
@@ -33,9 +34,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import org.fluentd.logger.FluentLogger;
+import org.fluentd.logger.FluentLoggerFactory;
 
 /**
- * TODO
+ * Sends Pipeline build log lines to fluentd.
  */
 final class FluentdLogger implements BuildListener {
 
@@ -46,15 +48,34 @@ final class FluentdLogger implements BuildListener {
     private final String host;
     private final int port;
     private transient PrintStream logger;
+    private final String sender;
 
     FluentdLogger(String tag, String buildId) {
+        this(tag, buildId, host(), port(), "master");
+    }
+
+    /** @see FluentLoggerFactory#getLogger(String) */
+    private static String host() {
+        String host = System.getenv("FLUENTD_HOST");
+        return host != null ? host : "localhost";
+    }
+
+    /** @see FluentLoggerFactory#getLogger(String) */
+    private static int port() {
+        String port = System.getenv("FLUENTD_PORT");
+        return port == null ? 24224 : Integer.parseInt(port);
+    }
+
+    private FluentdLogger(String tag, String buildId, String host, int port, String sender) {
         this.tag = tag;
         this.buildId = buildId;
-        // cf. FluentLoggerFactory.getLogger(String)
-        String _host = System.getenv("FLUENTD_HOST");
-        host = _host != null ? _host : "localhost";
-        String portS = System.getenv("FLUENTD_PORT");
-        port = portS == null ? 24224 : Integer.parseInt(portS);
+        this.host = host;
+        this.port = port;
+        this.sender = sender;
+    }
+
+    private Object writeReplace() {
+        return new FluentdLogger(tag, buildId, host, port, Channel.current().getName());
     }
 
     @Override
@@ -105,6 +126,7 @@ final class FluentdLogger implements BuildListener {
                 data.put("node", nodeId);
             }
             data.put("message", message);
+            data.put("sender", sender); // for diagnostic purposes; could be dropped to avoid overhead
             logger.log(tag, data);
         }
 
