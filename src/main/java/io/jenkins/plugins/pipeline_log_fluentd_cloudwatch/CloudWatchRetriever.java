@@ -37,6 +37,8 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.List;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 
@@ -73,7 +75,10 @@ class CloudWatchRetriever {
                     withLogStreamNames(logStreamName).
                     withFilterPattern("{$.build = \"" + buildId + "\"}"));
                 token = result.getNextToken();
-                for (FilteredLogEvent event : result.getEvents()) {
+                List<FilteredLogEvent> events = result.getEvents();
+                // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108:
+                events.sort(Comparator.comparingLong(e -> JSONObject.fromObject(e.getMessage()).optLong("timestamp", e.getTimestamp())));
+                for (FilteredLogEvent event : events) {
                     // TODO perhaps translate event.timestamp to a TimestampNote
                     JSONObject json = JSONObject.fromObject(event.getMessage());
                     assert buildId.equals(json.optString("build"));

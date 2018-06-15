@@ -31,10 +31,10 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import org.fluentd.logger.FluentLogger;
-import org.fluentd.logger.FluentLoggerFactory;
+import org.komamitsu.fluency.EventTime;
+import org.komamitsu.fluency.Fluency;
 
 /**
  * Sends Pipeline build log lines to fluentd.
@@ -54,13 +54,11 @@ final class FluentdLogger implements BuildListener {
         this(tag, buildId, host(), port(), "master");
     }
 
-    /** @see FluentLoggerFactory#getLogger(String) */
     private static String host() {
         String host = System.getenv("FLUENTD_HOST");
         return host != null ? host : "localhost";
     }
 
-    /** @see FluentLoggerFactory#getLogger(String) */
     private static int port() {
         String port = System.getenv("FLUENTD_PORT");
         return port == null ? 24224 : Integer.parseInt(port);
@@ -92,10 +90,14 @@ final class FluentdLogger implements BuildListener {
 
     private class FluentdOutputStream extends LineTransformationOutputStream {
         
-        private final FluentLogger logger;
+        private final Fluency logger;
 
         FluentdOutputStream() {
-            logger = FluentLogger.getLogger(null, host, port);
+            try {
+                logger = Fluency.defaultFluency(host, port);
+            } catch (IOException x) { // https://github.com/komamitsu/fluency/pull/99
+                throw new RuntimeException(x);
+            }
         }
 
         @Override
@@ -120,14 +122,28 @@ final class FluentdLogger implements BuildListener {
                 message = line.substring(sep + PipelineBridge.NODE_ID_SEP.length());
             }
             // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
-            Map<String, Object> data = new HashMap<>();
+            Map<String, Object> data = new LinkedHashMap<>();
             data.put("build", buildId);
+            data.put("message", message);
             if (nodeId != null) {
                 data.put("node", nodeId);
             }
-            data.put("message", message);
             data.put("sender", sender); // for diagnostic purposes; could be dropped to avoid overhead
-            logger.log(tag, data);
+            long now = System.currentTimeMillis();
+            data.put("timestamp", now); // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108
+            logger.emit(tag, EventTime.fromEpochMilli(now), data);
+        }
+
+        @Override
+        public void flush() throws IOException {
+            super.flush();
+            logger.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            super.close();
+            logger.close();
         }
 
     }
