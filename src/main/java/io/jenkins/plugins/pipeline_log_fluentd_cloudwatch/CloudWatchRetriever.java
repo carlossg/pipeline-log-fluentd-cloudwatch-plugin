@@ -29,8 +29,10 @@ import com.amazonaws.services.logs.AWSLogsClientBuilder;
 import com.amazonaws.services.logs.model.FilterLogEventsRequest;
 import com.amazonaws.services.logs.model.FilterLogEventsResult;
 import com.amazonaws.services.logs.model.FilteredLogEvent;
+import com.amazonaws.services.logs.model.ResourceNotFoundException;
 import com.google.common.primitives.Ints;
 import hudson.AbortException;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,6 +41,9 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import net.sf.json.JSONObject;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 
@@ -46,6 +51,8 @@ import org.apache.commons.io.output.ByteArrayOutputStream;
  * Retrieves build logs from CloudWatch.
  */
 class CloudWatchRetriever {
+
+    private static final Logger LOGGER = Logger.getLogger(CloudWatchRetriever.class.getName());
 
     private final String logStreamName;
     private final String buildId;
@@ -91,6 +98,9 @@ class CloudWatchRetriever {
                     w.write('\n');
                 }
             } while (token != null);
+        } catch (ResourceNotFoundException x) {
+            LOGGER.log(Level.SEVERE, "Error getting log stream {0}/{1}: {2}",
+                    new String[] { logGroupName, logStreamName, x.getMessage() });
         } catch (RuntimeException x) { // AWS SDK exceptions of various sorts
             throw new IOException(x);
         }
