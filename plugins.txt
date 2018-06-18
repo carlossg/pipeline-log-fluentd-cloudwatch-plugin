@@ -1,0 +1,11 @@
+#workflow-support:2.19-rc257.cd70bcc4c209
+#durable-task:1.23-rc127.e219d474cdd6
+workflow-scm-step:2.4
+workflow-step-api:2.13
+#workflow-api:2.28-rc214.c2c17ba172df
+#workflow-job:2.22-rc304.ab259f8d8088
+workflow-basic-steps:2.7
+aws-java-sdk:1.11.341
+apache-httpcomponents-client-4-api:4.5.3-2.0
+#workflow-durable-task-step:2.20-rc333.74dc7c303e6d
+workflow-cps:2.53
