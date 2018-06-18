@@ -41,6 +41,7 @@ import java.util.Comparator;
 import java.util.List;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.output.ByteArrayOutputStream;
+import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
 
 /**
  * Retrieves build logs from CloudWatch.
@@ -85,7 +86,7 @@ class CloudWatchRetriever {
                     String nodeId = json.optString("node", null);
                     if (nodeId != null) {
                         w.write(nodeId);
-                        w.write(PipelineBridge.NODE_ID_SEP);
+                        w.write(AnnotatedLogAction.NODE_ID_SEP);
                     }
                     w.write(json.getString("message"));
                     w.write('\n');

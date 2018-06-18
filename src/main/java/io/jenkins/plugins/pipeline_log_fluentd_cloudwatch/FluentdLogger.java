@@ -33,6 +33,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
 import org.komamitsu.fluency.EventTime;
 import org.komamitsu.fluency.Fluency;
 
@@ -113,13 +114,13 @@ final class FluentdLogger implements BuildListener {
             }
             String line = new String(b, 0, eol, StandardCharsets.UTF_8);
             String nodeId, message;
-            int sep = line.indexOf(PipelineBridge.NODE_ID_SEP);
+            int sep = line.indexOf(AnnotatedLogAction.NODE_ID_SEP);
             if (sep == -1) {
                 nodeId = null;
                 message = line;
             } else {
                 nodeId = line.substring(0, sep); // TODO sometimes this picks up junk from another line that got mixed in to this one; check that the nodeId is numeric
-                message = line.substring(sep + PipelineBridge.NODE_ID_SEP.length());
+                message = line.substring(sep + AnnotatedLogAction.NODE_ID_SEP.length());
             }
             // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
             Map<String, Object> data = new LinkedHashMap<>();

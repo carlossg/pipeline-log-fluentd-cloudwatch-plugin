@@ -30,16 +30,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.job.console.PipelineLogFile;
-import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
 
 /**
  * Binds fluentd and CloudWatch to Pipeline logs.
  */
 @Extension
 public class PipelineBridge extends PipelineLogFile {
-
-    /** TODO same as {@link AnnotatedLogAction#NODE_ID_SEP}; TBD whether that should be a proper API and where */
-    static final String NODE_ID_SEP = "¦";
 
     @Override
     protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
