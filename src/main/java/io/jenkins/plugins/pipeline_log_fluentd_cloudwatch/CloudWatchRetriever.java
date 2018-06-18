@@ -42,6 +42,8 @@ import java.util.List;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 /**
  * Retrieves build logs from CloudWatch.
  */
@@ -62,6 +64,7 @@ class CloudWatchRetriever {
         client = AWSLogsClientBuilder.defaultClient();
     }
 
+    @SuppressFBWarnings("OS_OPEN_STREAM")
     InputStream open(long start) throws IOException {
         // TODO inefficient; pull lazily if possible
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
