@@ -51,7 +51,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-job</artifactId>
-            <version>2.22-rc304.ab259f8d8088</version>
+            <version>2.22-rc307.c2f2a8f99504</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
         </dependency>
         <dependency>
             <groupId>org.komamitsu</groupId>
@@ -99,12 +99,12 @@
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-api</artifactId>
-                <version>2.28-rc214.c2c17ba172df</version>
+                <version>2.29-rc217.e1e30db1eb01</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-support</artifactId>
-                <version>2.19-rc259.1b22cbcb07a5</version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
+                <version>2.19-rc262.063ea963ad8d</version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins</groupId>
@@ -123,4 +123,17 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.jenkins-ci.tools</groupId>
+                <artifactId>maven-hpi-plugin</artifactId>
+                <configuration>
+                    <loggers>
+                        <io.jenkins.plugins.pipeline_log_fluentd_cloudwatch>FINE</io.jenkins.plugins.pipeline_log_fluentd_cloudwatch>
+                    </loggers>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

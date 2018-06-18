@@ -33,6 +33,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import jenkins.util.JenkinsJVM;
 import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
 import org.komamitsu.fluency.EventTime;
 import org.komamitsu.fluency.Fluency;
@@ -89,6 +90,10 @@ final class FluentdLogger implements BuildListener {
         return logger;
     }
 
+    private void callEventSent(long timestamp) {
+        PipelineBridge.get().eventSent(tag, buildId, timestamp);
+    }
+
     private class FluentdOutputStream extends LineTransformationOutputStream {
         
         private final Fluency logger;
@@ -133,6 +138,9 @@ final class FluentdLogger implements BuildListener {
             long now = System.currentTimeMillis();
             data.put("timestamp", now); // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108
             logger.emit(tag, EventTime.fromEpochMilli(now), data);
+            if (JenkinsJVM.isJenkinsJVM()) {
+                callEventSent(now);
+            } // not currently bothering to send notifications from agents
         }
 
         @Override

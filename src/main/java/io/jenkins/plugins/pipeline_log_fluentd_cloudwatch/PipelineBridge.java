@@ -25,9 +25,12 @@
 package io.jenkins.plugins.pipeline_log_fluentd_cloudwatch;
 
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.model.BuildListener;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.job.console.PipelineLogFile;
 
@@ -35,7 +38,15 @@ import org.jenkinsci.plugins.workflow.job.console.PipelineLogFile;
  * Binds fluentd and CloudWatch to Pipeline logs.
  */
 @Extension
-public class PipelineBridge extends PipelineLogFile {
+public final class PipelineBridge extends PipelineLogFile {
+
+    /**
+     * Map from {@code fullName#id} of builds to the last event timestamp known to have been sent to fluentd.
+     * When serving the log for that build, if the last observed timestamp is older, we wait until CloudWatch catches up.
+     * Once it does, we remove the entry since we no longer need to catch up further.
+     * TODO consider persisting this mapping.
+     */
+    private final Map<String, Long> lastRecordedTimestamps = new HashMap<>();
 
     @Override
     protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
@@ -43,8 +54,51 @@ public class PipelineBridge extends PipelineLogFile {
     }
 
     @Override
-    protected InputStream logFor(WorkflowRun b, long start) throws IOException {
-        return new CloudWatchRetriever(b.getParent().getFullName(), b.getId()).open(start);
+    protected InputStream logFor(WorkflowRun b, long start, boolean complete) throws IOException {
+        return new CloudWatchRetriever(b.getParent().getFullName(), b.getId(), complete).open(start);
+    }
+    
+    /**
+     * Called when we are delivering an event to fluentd.
+     */
+    void eventSent(String fullName, String id, long timestamp) {
+        String key = fullName + "#" + id;
+        synchronized (lastRecordedTimestamps) {
+            Long previous = lastRecordedTimestamps.get(key);
+            if (previous == null || previous < timestamp) {
+                lastRecordedTimestamps.put(key, timestamp);
+            }
+        }
+    }
+    
+    /**
+     * Called when looking in CloudWatch for the last-delivered event.
+     * @return 0 if there is no record
+     */
+    long latestEvent(String fullName, String id) {
+        String key = fullName + "#" + id;
+        synchronized (lastRecordedTimestamps) {
+            Long timestamp = lastRecordedTimestamps.get(key);
+            return timestamp != null ? timestamp : 0;
+        }
+    }
+
+    /**
+     * Called when we have successfully observed an event in CloudWatch.
+     * @param timestamp as in return value of {@link #latestEvent}
+     */
+    void caughtUp(String fullName, String id, long timestamp) {
+        String key = fullName + "#" + id;
+        synchronized (lastRecordedTimestamps) {
+            Long previous = lastRecordedTimestamps.get(key);
+            if (previous != null && previous == timestamp) {
+                lastRecordedTimestamps.remove(key);
+            }
+        }
+    }
+
+    static PipelineBridge get() {
+        return ExtensionList.lookupSingleton(PipelineBridge.class);
     }
 
 }
