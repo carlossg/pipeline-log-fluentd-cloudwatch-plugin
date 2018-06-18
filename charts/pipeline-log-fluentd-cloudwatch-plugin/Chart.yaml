@@ -1,5 +1,16 @@
-apiVersion: v1
-description: A Helm chart for Kubernetes
-icon: https://raw.githubusercontent.com/jenkins-x/jenkins-x-platform/master/images/java.png
-name: pipeline-log-fluentd-cloudwatch-plugin
-version: 0.1.0-SNAPSHOT
+name: jenkins
+home: https://jenkins.io/
+version: 0.16.3
+appVersion: 2.107
+description: Open source continuous integration server. It supports multiple SCM tools
+  including CVS, Subversion and Git. It can execute Apache Ant and Apache Maven-based
+  projects as well as arbitrary scripts.
+sources:
+- https://github.com/jenkinsci/jenkins
+- https://github.com/jenkinsci/docker-jnlp-slave
+maintainers:
+- name: lachie83
+  email: lachlan.evenson@microsoft.com
+- name: viglesiasce
+  email: viglesias@google.com
+icon: https://wiki.jenkins-ci.org/download/attachments/2916393/logo.png
