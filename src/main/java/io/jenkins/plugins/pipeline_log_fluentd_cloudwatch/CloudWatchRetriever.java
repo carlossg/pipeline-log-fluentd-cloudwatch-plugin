@@ -65,39 +65,37 @@ class CloudWatchRetriever {
 
     InputStream open(long start) throws IOException {
         // TODO inefficient; pull lazily if possible
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        Writer w = new OutputStreamWriter(baos, StandardCharsets.UTF_8);
-        String token = null;
-        try {
-            do {
-                FilterLogEventsResult result = client.filterLogEvents(new FilterLogEventsRequest().
-                    withNextToken(token).
-                    withLogGroupName(logGroupName).
-                    withLogStreamNames(logStreamName).
-                    withFilterPattern("{$.build = \"" + buildId + "\"}"));
-                token = result.getNextToken();
-                List<FilteredLogEvent> events = result.getEvents();
-                // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108:
-                events.sort(Comparator.comparingLong(e -> JSONObject.fromObject(e.getMessage()).optLong("timestamp", e.getTimestamp())));
-                for (FilteredLogEvent event : events) {
-                    // TODO perhaps translate event.timestamp to a TimestampNote
-                    JSONObject json = JSONObject.fromObject(event.getMessage());
-                    assert buildId.equals(json.optString("build"));
-                    String nodeId = json.optString("node", null);
-                    if (nodeId != null) {
-                        w.write(nodeId);
-                        w.write(AnnotatedLogAction.NODE_ID_SEP);
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream(); Writer w = new OutputStreamWriter(baos, StandardCharsets.UTF_8)) {
+            String token = null;
+                do {
+                    FilterLogEventsResult result = client.filterLogEvents(new FilterLogEventsRequest().
+                        withNextToken(token).
+                        withLogGroupName(logGroupName).
+                        withLogStreamNames(logStreamName).
+                        withFilterPattern("{$.build = \"" + buildId + "\"}"));
+                    token = result.getNextToken();
+                    List<FilteredLogEvent> events = result.getEvents();
+                    // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108:
+                    events.sort(Comparator.comparingLong(e -> JSONObject.fromObject(e.getMessage()).optLong("timestamp", e.getTimestamp())));
+                    for (FilteredLogEvent event : events) {
+                        // TODO perhaps translate event.timestamp to a TimestampNote
+                        JSONObject json = JSONObject.fromObject(event.getMessage());
+                        assert buildId.equals(json.optString("build"));
+                        String nodeId = json.optString("node", null);
+                        if (nodeId != null) {
+                            w.write(nodeId);
+                            w.write(AnnotatedLogAction.NODE_ID_SEP);
+                        }
+                        w.write(json.getString("message"));
+                        w.write('\n');
                     }
-                    w.write(json.getString("message"));
-                    w.write('\n');
-                }
-            } while (token != null);
+                } while (token != null);
+            w.flush();
+            int _start = Ints.checkedCast(start); // dumb but this implementation is not streaming anyway
+            return new ByteArrayInputStream(baos.toByteArray(), _start, baos.size() - _start);
         } catch (RuntimeException x) { // AWS SDK exceptions of various sorts
             throw new IOException(x);
         }
-        w.flush();
-        int _start = Ints.checkedCast(start); // dumb but this implementation is not streaming anyway
-        return new ByteArrayInputStream(baos.toByteArray(), _start, baos.size() - _start);
     }
 
 }
