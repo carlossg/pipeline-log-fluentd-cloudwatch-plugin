@@ -59,12 +59,14 @@ class CloudWatchRetriever {
 
     private final String logStreamName;
     private final String buildId;
+    private final TimestampTracker timestampTracker;
     private final String logGroupName;
     private final AWSLogs client;
 
-    CloudWatchRetriever(String logStreamName, String buildId) throws IOException {
+    CloudWatchRetriever(String logStreamName, String buildId, TimestampTracker timestampTracker) throws IOException {
         this.logStreamName = logStreamName;
         this.buildId = buildId;
+        this.timestampTracker = timestampTracker;
         logGroupName = System.getenv("CLOUDWATCH_LOG_GROUP_NAME");
         if (logGroupName == null) {
             throw new AbortException("You must specify the environment variable CLOUDWATCH_LOG_GROUP_NAME");
@@ -130,19 +132,15 @@ class CloudWatchRetriever {
      * Whether it looks like we have received all the log lines sent for the build.
      */
     private boolean couldBeComplete() {
-        PipelineBridge bridge = PipelineBridge.get();
-        long timestamp = bridge.latestEvent(logStreamName, buildId);
-        if (timestamp == 0) {
-            return true; // maybe?
-        }
-        // Do not use withStartTime(timestamp) as the fluentd bridge currently truncates milliseconds (see below).
-        if (client.filterLogEvents(createFilter().withFilterPattern("{$.timestamp = " + timestamp + "}").withLimit(1)).getEvents().isEmpty()) {
-            LOGGER.log(Level.FINE, "{0} contains no event in {1} with timestamp={2}", new Object[] {logGroupName, logStreamName, Long.toString(timestamp)});
-            return false;
-        } else {
-            bridge.caughtUp(logStreamName, buildId, timestamp);
-            return true;
-        }
+        return timestampTracker.checkCompletion(timestamp -> {
+            // Do not use withStartTime(timestamp) as the fluentd bridge currently truncates milliseconds (see below).
+            if (client.filterLogEvents(createFilter().withFilterPattern("{$.timestamp = " + timestamp + "}").withLimit(1)).getEvents().isEmpty()) {
+                LOGGER.log(Level.FINE, "{0} contains no event in {1} with timestamp={2}", new Object[] {logGroupName, logStreamName, Long.toString(timestamp)});
+                return false;
+            } else {
+                return true;
+            }
+        });
     }
 
     /**

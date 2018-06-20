@@ -25,13 +25,12 @@
 package io.jenkins.plugins.pipeline_log_fluentd_cloudwatch;
 
 import hudson.Extension;
-import hudson.ExtensionList;
 import hudson.console.AnnotatedLargeText;
 import hudson.model.BuildListener;
 import hudson.model.TaskListener;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
@@ -46,14 +45,7 @@ import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
 @Extension
 public final class PipelineBridge implements LogStorageFactory {
 
-    /**
-     * Map from {@code fullName#id} of builds to the last event timestamp known to have been sent to fluentd.
-     * When serving the log for that build, if the last observed timestamp is older, we wait until CloudWatch catches up.
-     * Once it does, we remove the entry since we no longer need to catch up further.
-     * TODO consider persisting this mapping.
-     * TODO alternately, could be part of the {@link LogStorage} state, if we take care to keep that {@code transient} for the {@link FluentdLogger}.
-     */
-    private final Map<String, Long> lastRecordedTimestamps = new HashMap<>();
+    private final Map<String, TimestampTracker> timestampTrackers = new ConcurrentHashMap<>();
 
     @Override
     public LogStorage forBuild(FlowExecutionOwner b) {
@@ -72,16 +64,16 @@ public final class PipelineBridge implements LogStorageFactory {
         return new LogStorage() {
             @Override
             public BuildListener overallListener() throws IOException, InterruptedException {
-                return new FluentdLogger(logStreamName, buildId, null);
+                return new FluentdLogger(logStreamName, buildId, null, timestampTracker());
             }
             @Override
             public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
-                return new FluentdLogger(logStreamName, buildId, node.getId());
+                return new FluentdLogger(logStreamName, buildId, node.getId(), timestampTracker());
             }
             @Override
             public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
                 try {
-                    return new CloudWatchRetriever(logStreamName, buildId).overallLog(build, complete);
+                    return new CloudWatchRetriever(logStreamName, buildId, timestampTracker()).overallLog(build, complete);
                 } catch (Exception x) {
                     return new BrokenLogStorage(x).overallLog(build, complete);
                 }
@@ -89,55 +81,15 @@ public final class PipelineBridge implements LogStorageFactory {
             @Override
             public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
                 try {
-                    return new CloudWatchRetriever(logStreamName, buildId).stepLog(node, complete);
+                    return new CloudWatchRetriever(logStreamName, buildId, timestampTracker()).stepLog(node, complete);
                 } catch (Exception x) {
                     return new BrokenLogStorage(x).stepLog(node, complete);
                 }
             }
+            private TimestampTracker timestampTracker() {
+                return timestampTrackers.computeIfAbsent(url, k -> new TimestampTracker());
+            }
         };
-    }
-
-    /**
-     * Called when we are delivering an event to fluentd.
-     */
-    void eventSent(String fullName, String id, long timestamp) {
-        String key = fullName + "#" + id;
-        synchronized (lastRecordedTimestamps) {
-            Long previous = lastRecordedTimestamps.get(key);
-            if (previous == null || previous < timestamp) {
-                lastRecordedTimestamps.put(key, timestamp);
-            }
-        }
-    }
-    
-    /**
-     * Called when looking in CloudWatch for the last-delivered event.
-     * @return 0 if there is no record
-     */
-    long latestEvent(String fullName, String id) {
-        String key = fullName + "#" + id;
-        synchronized (lastRecordedTimestamps) {
-            Long timestamp = lastRecordedTimestamps.get(key);
-            return timestamp != null ? timestamp : 0;
-        }
-    }
-
-    /**
-     * Called when we have successfully observed an event in CloudWatch.
-     * @param timestamp as in return value of {@link #latestEvent}
-     */
-    void caughtUp(String fullName, String id, long timestamp) {
-        String key = fullName + "#" + id;
-        synchronized (lastRecordedTimestamps) {
-            Long previous = lastRecordedTimestamps.get(key);
-            if (previous != null && previous == timestamp) {
-                lastRecordedTimestamps.remove(key);
-            }
-        }
-    }
-
-    static PipelineBridge get() {
-        return ExtensionList.lookupSingleton(PipelineBridge.class);
     }
 
 }

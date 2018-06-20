@@ -34,8 +34,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.annotation.CheckForNull;
-import jenkins.util.JenkinsJVM;
-import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
 import org.komamitsu.fluency.EventTime;
 import org.komamitsu.fluency.Fluency;
 
@@ -53,9 +51,10 @@ final class FluentdLogger implements BuildListener {
     private final int port;
     private transient PrintStream logger;
     private final String sender;
+    private transient @CheckForNull TimestampTracker timestampTracker;
 
-    FluentdLogger(String logStreamName, String buildId, @CheckForNull String nodeId) {
-        this(logStreamName, buildId, nodeId, host(), port(), "master");
+    FluentdLogger(String logStreamName, String buildId, @CheckForNull String nodeId, TimestampTracker timestampTracker) {
+        this(logStreamName, buildId, nodeId, host(), port(), "master", timestampTracker);
     }
 
     private static String host() {
@@ -68,17 +67,18 @@ final class FluentdLogger implements BuildListener {
         return port == null ? 24224 : Integer.parseInt(port);
     }
 
-    private FluentdLogger(String logStreamName, String buildId, @CheckForNull String nodeId, String host, int port, String sender) {
+    private FluentdLogger(String logStreamName, String buildId, @CheckForNull String nodeId, String host, int port, String sender, TimestampTracker timestampTracker) {
         this.logStreamName = logStreamName;
         this.buildId = buildId;
         this.nodeId = nodeId;
         this.host = host;
         this.port = port;
         this.sender = sender;
+        this.timestampTracker = timestampTracker;
     }
 
     private Object writeReplace() {
-        return new FluentdLogger(logStreamName, buildId, nodeId, host, port, Channel.current().getName());
+        return new FluentdLogger(logStreamName, buildId, nodeId, host, port, Channel.current().getName(), /* do not currently bother to record events from agent side */null);
     }
 
     @Override
@@ -91,10 +91,6 @@ final class FluentdLogger implements BuildListener {
             }
         }
         return logger;
-    }
-
-    private void callEventSent(long timestamp) {
-        PipelineBridge.get().eventSent(logStreamName, buildId, timestamp);
     }
 
     private class FluentdOutputStream extends LineTransformationOutputStream {
@@ -132,9 +128,9 @@ final class FluentdLogger implements BuildListener {
             long now = System.currentTimeMillis();
             data.put("timestamp", now); // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108
             logger.emit(logStreamName, EventTime.fromEpochMilli(now), data);
-            if (JenkinsJVM.isJenkinsJVM()) {
-                callEventSent(now);
-            } // not currently bothering to send notifications from agents
+            if (timestampTracker != null) {
+                timestampTracker.eventSent(now);
+            }
         }
 
         @Override
