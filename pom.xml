@@ -51,7 +51,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins.workflow</groupId>
             <artifactId>workflow-job</artifactId>
-            <version>2.22-rc307.c2f2a8f99504</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
+            <version>2.22-rc308.46bf528f5965</version> <!-- TODO https://github.com/jenkinsci/workflow-job-plugin/pull/27 -->
         </dependency>
         <dependency>
             <groupId>org.komamitsu</groupId>
@@ -99,12 +99,12 @@
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-api</artifactId>
-                <version>2.29-rc217.e1e30db1eb01</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
+                <version>2.29-rc218.58f0128f8864</version> <!-- TODO https://github.com/jenkinsci/workflow-api-plugin/pull/17 -->
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-support</artifactId>
-                <version>2.19-rc262.063ea963ad8d</version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
+                <version>2.19-rc263.468f91dca27d</version> <!-- TODO https://github.com/jenkinsci/workflow-support-plugin/pull/15 -->
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins</groupId>

@@ -33,6 +33,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import javax.annotation.CheckForNull;
 import jenkins.util.JenkinsJVM;
 import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
 import org.komamitsu.fluency.EventTime;
@@ -45,15 +46,16 @@ final class FluentdLogger implements BuildListener {
 
     private static final long serialVersionUID = 1;
 
-    private final String tag;
+    private final String logStreamName;
     private final String buildId;
+    private final @CheckForNull String nodeId;
     private final String host;
     private final int port;
     private transient PrintStream logger;
     private final String sender;
 
-    FluentdLogger(String tag, String buildId) {
-        this(tag, buildId, host(), port(), "master");
+    FluentdLogger(String logStreamName, String buildId, @CheckForNull String nodeId) {
+        this(logStreamName, buildId, nodeId, host(), port(), "master");
     }
 
     private static String host() {
@@ -66,16 +68,17 @@ final class FluentdLogger implements BuildListener {
         return port == null ? 24224 : Integer.parseInt(port);
     }
 
-    private FluentdLogger(String tag, String buildId, String host, int port, String sender) {
-        this.tag = tag;
+    private FluentdLogger(String logStreamName, String buildId, @CheckForNull String nodeId, String host, int port, String sender) {
+        this.logStreamName = logStreamName;
         this.buildId = buildId;
+        this.nodeId = nodeId;
         this.host = host;
         this.port = port;
         this.sender = sender;
     }
 
     private Object writeReplace() {
-        return new FluentdLogger(tag, buildId, host, port, Channel.current().getName());
+        return new FluentdLogger(logStreamName, buildId, nodeId, host, port, Channel.current().getName());
     }
 
     @Override
@@ -91,7 +94,7 @@ final class FluentdLogger implements BuildListener {
     }
 
     private void callEventSent(long timestamp) {
-        PipelineBridge.get().eventSent(tag, buildId, timestamp);
+        PipelineBridge.get().eventSent(logStreamName, buildId, timestamp);
     }
 
     private class FluentdOutputStream extends LineTransformationOutputStream {
@@ -117,16 +120,7 @@ final class FluentdLogger implements BuildListener {
                     break;
                 }
             }
-            String line = new String(b, 0, eol, StandardCharsets.UTF_8);
-            String nodeId, message;
-            int sep = line.indexOf(AnnotatedLogAction.NODE_ID_SEP);
-            if (sep == -1) {
-                nodeId = null;
-                message = line;
-            } else {
-                nodeId = line.substring(0, sep); // TODO sometimes this picks up junk from another line that got mixed in to this one; check that the nodeId is numeric
-                message = line.substring(sep + AnnotatedLogAction.NODE_ID_SEP.length());
-            }
+            String message = new String(b, 0, eol, StandardCharsets.UTF_8);
             // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("build", buildId);
@@ -137,7 +131,7 @@ final class FluentdLogger implements BuildListener {
             data.put("sender", sender); // for diagnostic purposes; could be dropped to avoid overhead
             long now = System.currentTimeMillis();
             data.put("timestamp", now); // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108
-            logger.emit(tag, EventTime.fromEpochMilli(now), data);
+            logger.emit(logStreamName, EventTime.fromEpochMilli(now), data);
             if (JenkinsJVM.isJenkinsJVM()) {
                 callEventSent(now);
             } // not currently bothering to send notifications from agents

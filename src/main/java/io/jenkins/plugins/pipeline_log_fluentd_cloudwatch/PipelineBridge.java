@@ -26,38 +26,77 @@ package io.jenkins.plugins.pipeline_log_fluentd_cloudwatch;
 
 import hudson.Extension;
 import hudson.ExtensionList;
+import hudson.console.AnnotatedLargeText;
 import hudson.model.BuildListener;
+import hudson.model.TaskListener;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
-import org.jenkinsci.plugins.workflow.job.WorkflowRun;
-import org.jenkinsci.plugins.workflow.job.console.PipelineLogFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
+import org.jenkinsci.plugins.workflow.log.LogStorage;
+import org.jenkinsci.plugins.workflow.log.LogStorageFactory;
 
 /**
  * Binds fluentd and CloudWatch to Pipeline logs.
  */
 @Extension
-public final class PipelineBridge extends PipelineLogFile {
+public final class PipelineBridge implements LogStorageFactory {
 
     /**
      * Map from {@code fullName#id} of builds to the last event timestamp known to have been sent to fluentd.
      * When serving the log for that build, if the last observed timestamp is older, we wait until CloudWatch catches up.
      * Once it does, we remove the entry since we no longer need to catch up further.
      * TODO consider persisting this mapping.
+     * TODO alternately, could be part of the {@link LogStorage} state, if we take care to keep that {@code transient} for the {@link FluentdLogger}.
      */
     private final Map<String, Long> lastRecordedTimestamps = new HashMap<>();
 
     @Override
-    protected BuildListener listenerFor(WorkflowRun b) throws IOException, InterruptedException {
-        return new FluentdLogger(b.getParent().getFullName(), b.getId());
+    public LogStorage forBuild(FlowExecutionOwner b) {
+        String url;
+        try {
+            url = b.getUrl();
+        } catch (IOException x) {
+            return new BrokenLogStorage(x);
+        }
+        Matcher m = Pattern.compile("(.+)/([^/]+)/").matcher(url);
+        if (!m.matches()) {
+            return new BrokenLogStorage(new IllegalArgumentException(url + " is not in expected format"));
+        }
+        final String logStreamName = m.group(1);
+        final String buildId = m.group(2);
+        return new LogStorage() {
+            @Override
+            public BuildListener overallListener() throws IOException, InterruptedException {
+                return new FluentdLogger(logStreamName, buildId, null);
+            }
+            @Override
+            public TaskListener nodeListener(FlowNode node) throws IOException, InterruptedException {
+                return new FluentdLogger(logStreamName, buildId, node.getId());
+            }
+            @Override
+            public AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) {
+                try {
+                    return new CloudWatchRetriever(logStreamName, buildId).overallLog(build, complete);
+                } catch (Exception x) {
+                    return new BrokenLogStorage(x).overallLog(build, complete);
+                }
+            }
+            @Override
+            public AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean complete) {
+                try {
+                    return new CloudWatchRetriever(logStreamName, buildId).stepLog(node, complete);
+                } catch (Exception x) {
+                    return new BrokenLogStorage(x).stepLog(node, complete);
+                }
+            }
+        };
     }
 
-    @Override
-    protected InputStream logFor(WorkflowRun b, long start, boolean complete) throws IOException {
-        return new CloudWatchRetriever(b.getParent().getFullName(), b.getId(), complete).open(start);
-    }
-    
     /**
      * Called when we are delivering an event to fluentd.
      */

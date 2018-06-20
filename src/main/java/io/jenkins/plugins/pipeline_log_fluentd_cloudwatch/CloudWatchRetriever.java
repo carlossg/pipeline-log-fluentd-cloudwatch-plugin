@@ -29,21 +29,26 @@ import com.amazonaws.services.logs.AWSLogsClientBuilder;
 import com.amazonaws.services.logs.model.FilterLogEventsRequest;
 import com.amazonaws.services.logs.model.FilterLogEventsResult;
 import com.amazonaws.services.logs.model.FilteredLogEvent;
-import com.google.common.primitives.Ints;
 import hudson.AbortException;
-import java.io.ByteArrayInputStream;
+import hudson.console.AnnotatedLargeText;
+import hudson.console.ConsoleAnnotationOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.annotation.CheckForNull;
 import net.sf.json.JSONObject;
-import org.apache.commons.io.output.ByteArrayOutputStream;
-import org.jenkinsci.plugins.workflow.support.actions.AnnotatedLogAction;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.log.ConsoleAnnotators;
+import org.jenkinsci.plugins.workflow.log.LogStorage;
+import org.kohsuke.stapler.framework.io.ByteBuffer;
 
 /**
  * Retrieves build logs from CloudWatch.
@@ -56,9 +61,8 @@ class CloudWatchRetriever {
     private final String buildId;
     private final String logGroupName;
     private final AWSLogs client;
-    private final boolean complete;
 
-    CloudWatchRetriever(String logStreamName, String buildId, boolean complete) throws IOException {
+    CloudWatchRetriever(String logStreamName, String buildId) throws IOException {
         this.logStreamName = logStreamName;
         this.buildId = buildId;
         logGroupName = System.getenv("CLOUDWATCH_LOG_GROUP_NAME");
@@ -66,36 +70,92 @@ class CloudWatchRetriever {
             throw new AbortException("You must specify the environment variable CLOUDWATCH_LOG_GROUP_NAME");
         }
         client = AWSLogsClientBuilder.defaultClient();
-        this.complete = complete;
     }
 
-    InputStream open(long start) throws IOException {
-        PipelineBridge bridge = PipelineBridge.get();
-        if (complete) {
-            long timestamp = bridge.latestEvent(logStreamName, buildId);
-            if (timestamp != 0) {
-                int tries = 0;
-                // Do not use withStartTime(timestamp) as the fluentd bridge currently truncated milliseconds.
-                while (client.filterLogEvents(createFilter().withFilterPattern("{$.timestamp = " + timestamp + "}").withLimit(1)).getEvents().isEmpty()) {
-                    if (++tries == 10) {
-                        LOGGER.log(Level.INFO, "Gave up waiting for {0} to contain an event in {1} with timestamp={2}", new Object[] {logGroupName, logStreamName, Long.toString(timestamp)});
-                        break;
-                    }
-                    LOGGER.log(Level.FINE, "Waiting for {0} to contain an event in {1} with timestamp={2}", new Object[] {logGroupName, logStreamName, Long.toString(timestamp)});
-                    try {
-                        Thread.sleep(3000);
-                    } catch (InterruptedException x) {
-                        throw new IOException(x);
-                    }
-                }
-                bridge.caughtUp(logStreamName, buildId, timestamp);
-            }
+    AnnotatedLargeText<FlowExecutionOwner.Executable> overallLog(FlowExecutionOwner.Executable build, boolean complete) throws IOException, InterruptedException {
+        return new OverallLog(build, complete);
+    }
+
+    AnnotatedLargeText<FlowNode> stepLog(FlowNode node, boolean completed) throws IOException {
+        ByteBuffer buf = new ByteBuffer();
+        stream(buf, node.getId(), null);
+        return new AnnotatedLargeText<>(buf, StandardCharsets.UTF_8, completed && couldBeComplete(), node);
+    }
+
+    private class OverallLog extends AnnotatedLargeText<FlowExecutionOwner.Executable> {
+
+        private final FlowExecutionOwner.Executable context;
+        private final List<String> idsByLine = new ArrayList<>();
+
+        OverallLog(FlowExecutionOwner.Executable build, boolean completed) throws IOException {
+            this(new ByteBuffer(), completed, build);
         }
-        // TODO inefficient; pull lazily if possible
-        try (ByteArrayOutputStream baos = new ByteArrayOutputStream(); Writer w = new OutputStreamWriter(baos, StandardCharsets.UTF_8)) {
+
+        private OverallLog(ByteBuffer buf, boolean completed, FlowExecutionOwner.Executable context) throws IOException {
+            super(buf, StandardCharsets.UTF_8, completed && couldBeComplete(), context);
+            this.context = context;
+            stream(buf, null, idsByLine);
+        }
+
+        @Override
+        public long writeHtmlTo(long start, final Writer w) throws IOException {
+            ConsoleAnnotationOutputStream<FlowExecutionOwner.Executable> caw = new ConsoleAnnotationOutputStream<FlowExecutionOwner.Executable>(w, ConsoleAnnotators.createAnnotator(context), context, StandardCharsets.UTF_8) {
+                private int line;
+                private String currentId;
+                @Override
+                protected void eol(byte[] in, int sz) throws IOException {
+                    String id = idsByLine.get(line++);
+                    if (id != null) {
+                        if (!id.equals(currentId)) {
+                            if (currentId != null) {
+                                w.write(LogStorage.endStep());
+                            }
+                            w.write(LogStorage.startStep(id));
+                        }
+                    } else if (currentId != null) {
+                        w.write(LogStorage.endStep());
+                    }
+                    super.eol(in, sz);
+                    currentId = id;
+                }
+            };
+            long r = writeRawLogTo(start, caw);
+            ConsoleAnnotators.setAnnotator(caw.getConsoleAnnotator());
+            return r;
+        }
+
+    }
+
+    /**
+     * Whether it looks like we have received all the log lines sent for the build.
+     */
+    private boolean couldBeComplete() {
+        PipelineBridge bridge = PipelineBridge.get();
+        long timestamp = bridge.latestEvent(logStreamName, buildId);
+        if (timestamp == 0) {
+            return true; // maybe?
+        }
+        // Do not use withStartTime(timestamp) as the fluentd bridge currently truncates milliseconds (see below).
+        if (client.filterLogEvents(createFilter().withFilterPattern("{$.timestamp = " + timestamp + "}").withLimit(1)).getEvents().isEmpty()) {
+            LOGGER.log(Level.FINE, "{0} contains no event in {1} with timestamp={2}", new Object[] {logGroupName, logStreamName, Long.toString(timestamp)});
+            return false;
+        } else {
+            bridge.caughtUp(logStreamName, buildId, timestamp);
+            return true;
+        }
+    }
+
+    /**
+     * Gather the log text for one node or the entire build.
+     * @param os where to send output
+     * @param nodeId if defined, limit output to that coming from this node
+     * @param idsByLine if defined, add a node ID or null per line printed
+     */
+    private void stream(OutputStream os, @CheckForNull String nodeId, @CheckForNull List<String> idsByLine) throws IOException {
+        try (Writer w = new OutputStreamWriter(os, StandardCharsets.UTF_8)) {
             String token = null;
                 do {
-                    FilterLogEventsResult result = client.filterLogEvents(createFilter().withFilterPattern("{$.build = \"" + buildId + "\"}").withNextToken(token));
+                    FilterLogEventsResult result = client.filterLogEvents(createFilter().withFilterPattern("{$.build = \"" + buildId + (nodeId == null ? "" : "\" && $.node = \"" + nodeId) + "\"}").withNextToken(token));
                     token = result.getNextToken();
                     List<FilteredLogEvent> events = result.getEvents();
                     // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108:
@@ -104,18 +164,14 @@ class CloudWatchRetriever {
                         // TODO perhaps translate event.timestamp to a TimestampNote
                         JSONObject json = JSONObject.fromObject(event.getMessage());
                         assert buildId.equals(json.optString("build"));
-                        String nodeId = json.optString("node", null);
-                        if (nodeId != null) {
-                            w.write(nodeId);
-                            w.write(AnnotatedLogAction.NODE_ID_SEP);
-                        }
                         w.write(json.getString("message"));
                         w.write('\n');
+                        if (idsByLine != null) {
+                            idsByLine.add(json.optString("node", null));
+                        }
                     }
                 } while (token != null);
             w.flush();
-            int _start = Ints.checkedCast(start); // dumb but this implementation is not streaming anyway
-            return new ByteArrayInputStream(baos.toByteArray(), _start, baos.size() - _start);
         } catch (RuntimeException x) { // AWS SDK exceptions of various sorts
             throw new IOException(x);
         }
