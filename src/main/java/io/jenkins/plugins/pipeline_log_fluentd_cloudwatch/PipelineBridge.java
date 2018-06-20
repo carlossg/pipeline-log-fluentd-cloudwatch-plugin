@@ -27,12 +27,12 @@ package io.jenkins.plugins.pipeline_log_fluentd_cloudwatch;
 import hudson.Extension;
 import hudson.console.AnnotatedLargeText;
 import hudson.model.BuildListener;
+import hudson.model.Queue;
+import hudson.model.Run;
 import hudson.model.TaskListener;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.log.BrokenLogStorage;
@@ -48,19 +48,21 @@ public final class PipelineBridge implements LogStorageFactory {
     private final Map<String, TimestampTracker> timestampTrackers = new ConcurrentHashMap<>();
 
     @Override
-    public LogStorage forBuild(FlowExecutionOwner b) {
-        String url;
+    public LogStorage forBuild(FlowExecutionOwner owner) {
+        final String logStreamName;
+        final String buildId;
         try {
-            url = b.getUrl();
+            Queue.Executable exec = owner.getExecutable();
+            if (exec instanceof Run) {
+                Run<?, ?> b = (Run<?, ?>) exec;
+                logStreamName = b.getParent().getFullName();
+                buildId = b.getId();
+            } else {
+                return null;
+            }
         } catch (IOException x) {
             return new BrokenLogStorage(x);
         }
-        Matcher m = Pattern.compile("(.+)/([^/]+)/").matcher(url);
-        if (!m.matches()) {
-            return new BrokenLogStorage(new IllegalArgumentException(url + " is not in expected format"));
-        }
-        final String logStreamName = m.group(1);
-        final String buildId = m.group(2);
         return new LogStorage() {
             @Override
             public BuildListener overallListener() throws IOException, InterruptedException {
@@ -87,7 +89,7 @@ public final class PipelineBridge implements LogStorageFactory {
                 }
             }
             private TimestampTracker timestampTracker() {
-                return timestampTrackers.computeIfAbsent(url, k -> new TimestampTracker());
+                return timestampTrackers.computeIfAbsent(logStreamName + "#" + buildId, k -> new TimestampTracker());
             }
         };
     }
