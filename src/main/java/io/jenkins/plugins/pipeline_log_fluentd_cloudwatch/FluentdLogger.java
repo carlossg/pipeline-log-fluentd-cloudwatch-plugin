@@ -56,12 +56,12 @@ final class FluentdLogger implements BuildListener {
     }
 
     private static String host() {
-        String host = System.getenv("FLUENTD_HOST");
+        String host = System.getenv("FLUENTD_SERVICE_HOST");
         return host != null ? host : "localhost";
     }
 
     private static int port() {
-        String port = System.getenv("FLUENTD_PORT");
+        String port = System.getenv("FLUENTD_SERVICE_PORT_TCP");
         return port == null ? 24224 : Integer.parseInt(port);
     }
 
