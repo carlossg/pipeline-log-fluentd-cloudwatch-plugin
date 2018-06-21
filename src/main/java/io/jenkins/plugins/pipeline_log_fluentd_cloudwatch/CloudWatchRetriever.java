@@ -162,8 +162,7 @@ class CloudWatchRetriever {
                         // TODO perhaps translate event.timestamp to a TimestampNote
                         JSONObject json = JSONObject.fromObject(event.getMessage());
                         assert buildId.equals(json.optString("build"));
-                        w.write(json.getString("message"));
-                        w.write('\n');
+                        ConsoleNotes.write(w, json);
                         if (idsByLine != null) {
                             idsByLine.add(json.optString("node", null));
                         }

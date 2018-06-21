@@ -30,8 +30,6 @@ import hudson.remoting.Channel;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.annotation.CheckForNull;
 import org.komamitsu.fluency.EventTime;
@@ -107,20 +105,8 @@ final class FluentdLogger implements BuildListener {
 
         @Override
         protected void eol(byte[] b, int len) throws IOException {
-            int eol = len;
-            while (eol > 0) {
-                byte c = b[eol - 1];
-                if (c == '\n' || c == '\r') {
-                    eol--;
-                } else {
-                    break;
-                }
-            }
-            String message = new String(b, 0, eol, StandardCharsets.UTF_8);
-            // TODO consider extracting serialized ConsoleNote and putting in a separate field, for better readability of logs externally
-            Map<String, Object> data = new LinkedHashMap<>();
+            Map<String, Object> data = ConsoleNotes.parse(b, len);
             data.put("build", buildId);
-            data.put("message", message);
             if (nodeId != null) {
                 data.put("node", nodeId);
             }
