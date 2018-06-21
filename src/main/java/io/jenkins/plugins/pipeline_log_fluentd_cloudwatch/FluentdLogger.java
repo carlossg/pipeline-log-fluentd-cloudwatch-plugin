@@ -30,6 +30,12 @@ import hudson.remoting.Channel;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.annotation.CheckForNull;
 import org.komamitsu.fluency.EventTime;
@@ -113,6 +119,8 @@ final class FluentdLogger implements BuildListener {
             data.put("sender", sender); // for diagnostic purposes; could be dropped to avoid overhead
             long now = System.currentTimeMillis();
             data.put("timestamp", now); // TODO pending https://github.com/fluent-plugins-nursery/fluent-plugin-cloudwatch-logs/pull/108
+            data.put("timestampIso", ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneOffset.UTC)
+                    .format(DateTimeFormatter.ISO_INSTANT)); // useful for debugging
             logger.emit(logStreamName, EventTime.fromEpochMilli(now), data);
             if (timestampTracker != null) {
                 timestampTracker.eventSent(now);
